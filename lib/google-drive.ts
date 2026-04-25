@@ -36,13 +36,20 @@ export async function uploadToGoogleDrive(
   const auth = getAuth();
   const drive = google.drive({ version: "v3", auth });
 
+  // Try D/protokoll first, fall back to finding protokoll/Protokoll directly
+  let protokollId: string | null = null;
   const folderDId = await findFolderId(drive, "D");
-  if (!folderDId) throw new Error("Hittade inte mappen 'D' på Google Drive");
-
-  const protokollId = await findFolderId(drive, "protokoll", folderDId);
+  if (folderDId) {
+    protokollId = await findFolderId(drive, "protokoll", folderDId)
+      ?? await findFolderId(drive, "Protokoll", folderDId);
+  }
+  if (!protokollId) {
+    protokollId = await findFolderId(drive, "protokoll")
+      ?? await findFolderId(drive, "Protokoll");
+  }
   if (!protokollId)
     throw new Error(
-      "Hittade inte mappen 'protokoll' under 'D' på Google Drive"
+      "Hittade inte mappen 'protokoll' på Google Drive. Kontrollera att mappen är delad med service account-kontot."
     );
 
   const { Readable } = await import("stream");
