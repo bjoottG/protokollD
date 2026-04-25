@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/auth";
 import { analyzeProtocolPhotos, analyzeNamelistPhotos } from "@/lib/claude";
 import { generateProtocolDocx, buildFilename } from "@/lib/docx-generator";
-import { uploadToGoogleDrive } from "@/lib/google-drive";
+import { uploadToGoogleDrive, uploadPhotosToFoton } from "@/lib/google-drive";
 
 export const maxDuration = 120;
 
@@ -53,11 +53,15 @@ export async function POST(req: NextRequest) {
     const docxBuffer = await generateProtocolDocx(protocolData);
     const filename = buildFilename(protocolData.meetingDate);
 
-    const driveLink = await uploadToGoogleDrive(
-      docxBuffer,
-      filename,
-      session.accessToken
-    );
+    const [driveLink] = await Promise.all([
+      uploadToGoogleDrive(docxBuffer, filename, session.accessToken),
+      uploadPhotosToFoton(
+        protocolBuffers,
+        namelistBuffers,
+        protocolData.meetingDate,
+        session.accessToken
+      ).catch((err) => console.error("Foto-uppladdning misslyckades:", err)),
+    ]);
 
     return NextResponse.json({ filename, driveLink });
   } catch (err) {

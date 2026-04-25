@@ -4,10 +4,16 @@ import {
   Paragraph,
   TextRun,
   AlignmentType,
-  TabStopPosition,
+  Header,
+  ImageRun,
   TabStopType,
+  TabStopPosition,
 } from "docx";
+import { readFileSync } from "fs";
+import { join } from "path";
 import type { ProtocolData } from "./types";
+
+const FONT_SIZE = 24; // half-points = 12pt
 
 const SWEDISH_MONTHS = [
   "januari", "februari", "mars", "april", "maj", "juni",
@@ -26,23 +32,52 @@ function formatDate(dateStr: string): string {
   return `${day}${swedishOrdinal(day)} ${SWEDISH_MONTHS[month - 1]} ${year}`;
 }
 
+function t(text: string, bold = false): TextRun {
+  return new TextRun({ text, bold, size: FONT_SIZE });
+}
+
 function p(text: string): Paragraph {
-  return new Paragraph({ children: [new TextRun(text)] });
+  return new Paragraph({ children: [t(text)] });
 }
 
 function empty(): Paragraph {
-  return new Paragraph({});
+  return new Paragraph({ children: [t("")] });
 }
 
 function sectionHeader(n: number): Paragraph {
   return new Paragraph({
-    children: [new TextRun({ text: `§ ${n}`, bold: true })],
+    children: [t(`§ ${n}`, true)],
     alignment: AlignmentType.CENTER,
   });
 }
 
-function bold(text: string): Paragraph {
-  return new Paragraph({ children: [new TextRun({ text, bold: true })] });
+function buildHeader(): Header {
+  const mallPath = join(process.cwd(), "mallar");
+  const druidImg = readFileSync(join(mallPath, "druid_ikon.jpg"));
+  const dervaImg = readFileSync(join(mallPath, "derva_ikon.png"));
+
+  return new Header({
+    children: [
+      new Paragraph({
+        children: [
+          new ImageRun({
+            data: druidImg,
+            transformation: { width: 73, height: 74 },
+            type: "jpg",
+          }),
+          new TextRun({ text: "\t", size: FONT_SIZE }),
+          new ImageRun({
+            data: dervaImg,
+            transformation: { width: 143, height: 94 },
+            type: "png",
+          }),
+        ],
+        tabStops: [
+          { type: TabStopType.RIGHT, position: TabStopPosition.MAX },
+        ],
+      }),
+    ],
+  });
 }
 
 export async function generateProtocolDocx(data: ProtocolData): Promise<Buffer> {
@@ -78,9 +113,9 @@ export async function generateProtocolDocx(data: ProtocolData): Promise<Buffer> 
       paragraphs.push(p(sub));
     }
   }
-  if (data.rslSlTrustee) {
-    paragraphs.push(p(`RSL:s och SL:s förtroendeman i logen är ${data.rslSlTrustee}`));
-  }
+  // RSL/SL trustee always last in §2
+  const rslName = data.tjOASubstitute ?? "Daniel Wikberg";
+  paragraphs.push(p(`RSL:s och SL:s förtroendeman i logen är OÄ ${rslName}`));
   paragraphs.push(empty());
 
   // --- § 3 ---
@@ -116,47 +151,37 @@ export async function generateProtocolDocx(data: ProtocolData): Promise<Buffer> 
   }
   paragraphs.push(empty());
 
-  // Dynamic middle sections – §7, §8, etc.
   let nextParaNum = 7;
 
   if (data.ideellt && data.ideellt.length > 0) {
-    paragraphs.push(sectionHeader(nextParaNum));
-    nextParaNum++;
+    paragraphs.push(sectionHeader(nextParaNum++));
     paragraphs.push(empty());
-    paragraphs.push(bold("Ideellt:"));
+    paragraphs.push(new Paragraph({ children: [t("Ideellt:", true)] }));
     for (const line of data.ideellt) {
       if (line.trim()) paragraphs.push(p(line));
     }
     paragraphs.push(empty());
   }
 
-  if (data.incomingDocuments.length > 0 || true) {
-    paragraphs.push(sectionHeader(nextParaNum));
-    nextParaNum++;
-    paragraphs.push(empty());
-    paragraphs.push(p("Inkomna skrivelser: "));
-    for (const line of data.incomingDocuments) {
-      if (line.trim()) paragraphs.push(p(line));
-    }
-    paragraphs.push(empty());
+  paragraphs.push(sectionHeader(nextParaNum++));
+  paragraphs.push(empty());
+  paragraphs.push(p("Inkomna skrivelser: "));
+  for (const line of data.incomingDocuments) {
+    if (line.trim()) paragraphs.push(p(line));
   }
+  paragraphs.push(empty());
 
-  if (data.openDiscussion.length > 0 || true) {
-    paragraphs.push(sectionHeader(nextParaNum));
-    nextParaNum++;
-    paragraphs.push(empty());
-    paragraphs.push(p("Ordet fritt"));
-    for (const line of data.openDiscussion) {
-      if (line.trim()) paragraphs.push(p(line));
-    }
-    paragraphs.push(empty());
+  paragraphs.push(sectionHeader(nextParaNum++));
+  paragraphs.push(empty());
+  paragraphs.push(p("Ordet fritt"));
+  for (const line of data.openDiscussion) {
+    if (line.trim()) paragraphs.push(p(line));
   }
+  paragraphs.push(empty());
 
-  // Extra custom sections
   if (data.extraSections) {
     for (const section of data.extraSections) {
-      paragraphs.push(sectionHeader(nextParaNum));
-      nextParaNum++;
+      paragraphs.push(sectionHeader(nextParaNum++));
       paragraphs.push(empty());
       if (section.title) paragraphs.push(p(section.title));
       for (const line of section.content) {
@@ -167,8 +192,7 @@ export async function generateProtocolDocx(data: ProtocolData): Promise<Buffer> 
   }
 
   // --- Next meeting ---
-  paragraphs.push(sectionHeader(nextParaNum));
-  nextParaNum++;
+  paragraphs.push(sectionHeader(nextParaNum++));
   paragraphs.push(empty());
   const nextDate = formatDate(data.nextMeetingDate);
   paragraphs.push(
@@ -181,26 +205,27 @@ export async function generateProtocolDocx(data: ProtocolData): Promise<Buffer> 
   paragraphs.push(empty());
   paragraphs.push(p(`ÄÄ avslutade mötet kl: ${data.closingTime}. `));
   paragraphs.push(empty());
-  paragraphs.push(
-    new Paragraph({
-      children: [new TextRun({ text: "\t\t\tJusteras", bold: false })],
-    })
-  );
+  paragraphs.push(new Paragraph({ children: [t("\t\t\tJusteras")] }));
   paragraphs.push(empty());
   paragraphs.push(empty());
-  paragraphs.push(
-    p(
-      "______________________                                                 _________________________"
-    )
-  );
-  paragraphs.push(
-    p(
-      "Skr.                                                                                      ÄÄ "
-    )
-  );
+  paragraphs.push(p("______________________                                                 _________________________"));
+  paragraphs.push(p("Skr.                                                                                      ÄÄ "));
 
   const doc = new Document({
-    sections: [{ properties: {}, children: paragraphs }],
+    styles: {
+      default: {
+        document: {
+          run: { size: FONT_SIZE },
+        },
+      },
+    },
+    sections: [
+      {
+        headers: { default: buildHeader() },
+        properties: {},
+        children: paragraphs,
+      },
+    ],
   });
 
   const buffer = await Packer.toBuffer(doc);
@@ -208,7 +233,6 @@ export async function generateProtocolDocx(data: ProtocolData): Promise<Buffer> 
 }
 
 export function buildFilename(meetingDate: string): string {
-  // ÅÅMMDD Protokoll EU.docx
   const parts = meetingDate.split("-");
   const yy = parts[0].slice(-2);
   const mm = parts[1];

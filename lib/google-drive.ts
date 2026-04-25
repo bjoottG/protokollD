@@ -28,15 +28,29 @@ async function findFolderId(
   return res.data.files?.[0]?.id ?? null;
 }
 
-export async function uploadToGoogleDrive(
-  buffer: Buffer,
-  filename: string,
-  accessToken: string
+async function findOrCreateFolder(
+  drive: ReturnType<typeof google.drive>,
+  name: string,
+  parentId: string
 ): Promise<string> {
-  const auth = getAuth(accessToken);
-  const drive = google.drive({ version: "v3", auth });
+  const existing = await findFolderId(drive, name, parentId);
+  if (existing) return existing;
 
-  // Try D/protokoll first, fall back to finding protokoll/Protokoll directly
+  const res = await drive.files.create({
+    supportsAllDrives: true,
+    requestBody: {
+      name,
+      mimeType: "application/vnd.google-apps.folder",
+      parents: [parentId],
+    },
+    fields: "id",
+  });
+  return res.data.id!;
+}
+
+async function getProtokollFolderId(
+  drive: ReturnType<typeof google.drive>
+): Promise<string | null> {
   let protokollId: string | null = null;
   const folderDId = await findFolderId(drive, "D");
   if (folderDId) {
@@ -49,10 +63,20 @@ export async function uploadToGoogleDrive(
       (await findFolderId(drive, "protokoll")) ??
       (await findFolderId(drive, "Protokoll"));
   }
+  return protokollId;
+}
+
+export async function uploadToGoogleDrive(
+  buffer: Buffer,
+  filename: string,
+  accessToken: string
+): Promise<string> {
+  const auth = getAuth(accessToken);
+  const drive = google.drive({ version: "v3", auth });
+
+  const protokollId = await getProtokollFolderId(drive);
   if (!protokollId)
-    throw new Error(
-      "Hittade inte mappen 'protokoll' på Google Drive."
-    );
+    throw new Error("Hittade inte mappen 'protokoll' på Google Drive.");
 
   const { Readable } = await import("stream");
   const stream = Readable.from(buffer);
@@ -74,4 +98,61 @@ export async function uploadToGoogleDrive(
   });
 
   return res.data.webViewLink ?? "";
+}
+
+export async function uploadPhotosToFoton(
+  protocolBuffers: Buffer[],
+  namelistBuffers: Buffer[],
+  meetingDate: string,
+  accessToken: string
+): Promise<void> {
+  const auth = getAuth(accessToken);
+  const drive = google.drive({ version: "v3", auth });
+
+  const protokollId = await getProtokollFolderId(drive);
+  if (!protokollId) return;
+
+  const fotonId = await findOrCreateFolder(drive, "foton", protokollId);
+
+  const parts = meetingDate.split("-");
+  const yy = parts[0].slice(-2);
+  const mm = parts[1];
+  const dd = parts[2];
+  const datePrefix = `${yy}${mm}${dd}`;
+
+  const { Readable } = await import("stream");
+
+  const uploads: Promise<unknown>[] = [];
+
+  for (let i = 0; i < protocolBuffers.length; i++) {
+    uploads.push(
+      drive.files.create({
+        supportsAllDrives: true,
+        requestBody: {
+          name: `${datePrefix}_protokoll_sida${i + 1}.jpg`,
+          parents: [fotonId],
+          mimeType: "image/jpeg",
+        },
+        media: { mimeType: "image/jpeg", body: Readable.from(protocolBuffers[i]) },
+        fields: "id",
+      })
+    );
+  }
+
+  for (let i = 0; i < namelistBuffers.length; i++) {
+    uploads.push(
+      drive.files.create({
+        supportsAllDrives: true,
+        requestBody: {
+          name: `${datePrefix}_namnlista${i + 1}.jpg`,
+          parents: [fotonId],
+          mimeType: "image/jpeg",
+        },
+        media: { mimeType: "image/jpeg", body: Readable.from(namelistBuffers[i]) },
+        fields: "id",
+      })
+    );
+  }
+
+  await Promise.all(uploads);
 }

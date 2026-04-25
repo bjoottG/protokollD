@@ -6,7 +6,7 @@ export interface ProtocolData {
   attendeeCount: string;
   officersAllOrdinarie: boolean;
   officerSubstitutes: string[];
-  rslSlTrustee: string;
+  tjOASubstitute?: string;
   healthStatus: string[];
   forOrdersBest: string[];
   absentGreetings: string[];

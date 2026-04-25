@@ -11,20 +11,21 @@ Formuläret innehåller följande paragrafer:
 - Sida 2: §4 (hälsotillståndet), §5 (Till Orden bästa), §6 (hälsningar frånvarande brr)
 - Sida 3: §7 (inkomna skrivelser), §8 (Ordet fritt), §9 (datum nästa möte), §10 (avslutning)
 
-Viktigt: Extrahera BARA vad som är handskrivet (inte det förtryckta texten i formuläret).
+Viktigt: Extrahera BARA vad som är handskrivet (inte den förtryckta texten i formuläret).
 För §2: titta på ERSÄTTARE-kolumnen – om ett namn är ifyllt där är personen ersatt.
-RSL:s och SL:s förtroendeman kan vara handskrivet någonstans på sida 1 eller 2.
+Specifikt viktigt: Kolla om "TjOÄ Daniel Wikberg" har en ersättare i ERSÄTTARE-kolumnen.
+Om ja, fyll i ersättarens namn i fältet "tjOASubstitute".
 
 Returnera EXAKT följande JSON-format (ingen annan text):
 {
   "meetingDate": "ÅÅÅÅ-MM-DD",
   "weekday": "lördagen|tisdagen|måndagen|onsdagen|torsdagen|fredagen|söndagen",
-  "meetingType": "ordinarie Eubatmöte" (eller "ordinarie Eubatmöte med reception" om det gäller),
+  "meetingType": "ordinarie Eubatmöte",
   "openingTime": "HH:MM",
   "attendeeCount": "24",
   "officersAllOrdinarie": true|false,
   "officerSubstitutes": ["Broder X var för dagen förhindrad fullgöra sitt ämbetsuppdrag och i hans ställe tjänstgjorde broder Y"],
-  "rslSlTrustee": "OÄ Magnus Östman",
+  "tjOASubstitute": null,
   "healthStatus": ["rad 1", "rad 2"],
   "forOrdersBest": ["rad 1", "rad 2"],
   "incomingDocuments": ["rad 1"],
@@ -35,7 +36,8 @@ Returnera EXAKT följande JSON-format (ingen annan text):
   "ideellt": null
 }
 
-Om något fält är tomt eller oläsbart, använd tom lista [] eller tom sträng "".
+Om något fält är tomt eller oläsbart, använd tom lista [] eller null.
+tjOASubstitute ska vara null om Daniel Wikberg inte har någon ersättare.
 §6 (hälsningar frånvarande brr) lämnas tom – den fylls i från namnlistfoton separat.`;
 
 const NAMELIST_PROMPT = `Du ser ett eller flera foton på namnlistor.
