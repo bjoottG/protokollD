@@ -3,6 +3,31 @@
 import { useRef, useState, useCallback } from "react";
 import { signOut } from "next-auth/react";
 
+async function compressImage(file: File): Promise<File> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const MAX = 1600;
+      let w = img.width;
+      let h = img.height;
+      if (w > MAX) { h = Math.round((h * MAX) / w); w = MAX; }
+      if (h > MAX) { w = Math.round((w * MAX) / h); h = MAX; }
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext("2d")!.drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      canvas.toBlob(
+        (blob) => resolve(new File([blob!], file.name, { type: "image/jpeg" })),
+        "image/jpeg",
+        0.75
+      );
+    };
+    img.src = url;
+  });
+}
+
 type Phase = "protocol" | "namelist-prompt" | "namelist" | "processing" | "done" | "error";
 
 interface PhotoSet {
@@ -83,15 +108,26 @@ export default function Home() {
   const handleGenerate = useCallback(async () => {
     setPhase("processing");
     try {
+      const [compressedProtocol, compressedNamelist] = await Promise.all([
+        Promise.all(photos.protocolPhotos.map(compressImage)),
+        Promise.all(photos.namelistPhotos.map(compressImage)),
+      ]);
+
       const fd = new FormData();
-      photos.protocolPhotos.forEach((f, i) => fd.append(`protocol_${i + 1}`, f));
-      photos.namelistPhotos.forEach((f, i) => fd.append(`namelist_${i + 1}`, f));
+      compressedProtocol.forEach((f, i) => fd.append(`protocol_${i + 1}`, f));
+      compressedNamelist.forEach((f, i) => fd.append(`namelist_${i + 1}`, f));
 
       const res = await fetch("/api/generate", { method: "POST", body: fd });
-      const data = await res.json();
+      const text = await res.text();
+      let data: { error?: string; filename?: string; driveLink?: string };
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(`Serverfel (${res.status}): bildfiler för stora eller serverfel`);
+      }
 
       if (!res.ok) throw new Error(data.error ?? "Serverfel");
-      setResult(data);
+      setResult(data as { filename: string; driveLink: string });
       setPhase("done");
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "Okänt fel");
