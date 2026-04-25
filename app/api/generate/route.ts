@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/auth";
 import { analyzeProtocolPhotos, analyzeNamelistPhotos } from "@/lib/claude";
 import { generateProtocolDocx, buildFilename } from "@/lib/docx-generator";
 import { uploadToGoogleDrive } from "@/lib/google-drive";
@@ -6,6 +8,11 @@ import { uploadToGoogleDrive } from "@/lib/google-drive";
 export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session?.accessToken) {
+    return NextResponse.json({ error: "Inte inloggad" }, { status: 401 });
+  }
+
   try {
     const formData = await req.formData();
 
@@ -46,7 +53,11 @@ export async function POST(req: NextRequest) {
     const docxBuffer = await generateProtocolDocx(protocolData);
     const filename = buildFilename(protocolData.meetingDate);
 
-    const driveLink = await uploadToGoogleDrive(docxBuffer, filename);
+    const driveLink = await uploadToGoogleDrive(
+      docxBuffer,
+      filename,
+      session.accessToken
+    );
 
     return NextResponse.json({ filename, driveLink });
   } catch (err) {

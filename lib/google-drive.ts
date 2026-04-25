@@ -1,13 +1,12 @@
 import { google } from "googleapis";
 
-function getAuth() {
-  const json = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
-  if (!json) throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON saknas i miljövariabler");
-  const credentials = JSON.parse(json);
-  return new google.auth.GoogleAuth({
-    credentials,
-    scopes: ["https://www.googleapis.com/auth/drive"],
-  });
+function getAuth(accessToken: string) {
+  const oauth2Client = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET
+  );
+  oauth2Client.setCredentials({ access_token: accessToken });
+  return oauth2Client;
 }
 
 async function findFolderId(
@@ -31,25 +30,28 @@ async function findFolderId(
 
 export async function uploadToGoogleDrive(
   buffer: Buffer,
-  filename: string
+  filename: string,
+  accessToken: string
 ): Promise<string> {
-  const auth = getAuth();
+  const auth = getAuth(accessToken);
   const drive = google.drive({ version: "v3", auth });
 
   // Try D/protokoll first, fall back to finding protokoll/Protokoll directly
   let protokollId: string | null = null;
   const folderDId = await findFolderId(drive, "D");
   if (folderDId) {
-    protokollId = await findFolderId(drive, "protokoll", folderDId)
-      ?? await findFolderId(drive, "Protokoll", folderDId);
+    protokollId =
+      (await findFolderId(drive, "protokoll", folderDId)) ??
+      (await findFolderId(drive, "Protokoll", folderDId));
   }
   if (!protokollId) {
-    protokollId = await findFolderId(drive, "protokoll")
-      ?? await findFolderId(drive, "Protokoll");
+    protokollId =
+      (await findFolderId(drive, "protokoll")) ??
+      (await findFolderId(drive, "Protokoll"));
   }
   if (!protokollId)
     throw new Error(
-      "Hittade inte mappen 'protokoll' på Google Drive. Kontrollera att mappen är delad med service account-kontot."
+      "Hittade inte mappen 'protokoll' på Google Drive."
     );
 
   const { Readable } = await import("stream");

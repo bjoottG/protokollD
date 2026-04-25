@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useCallback } from "react";
+import { signOut } from "next-auth/react";
 
 type Phase = "protocol" | "namelist-prompt" | "namelist" | "processing" | "done" | "error";
 
@@ -117,9 +118,15 @@ export default function Home() {
       />
 
       <div className="w-full max-w-md bg-white rounded-2xl shadow-sm p-6">
-        <h1 className="text-xl font-semibold text-center text-gray-800 mb-1">
-          Protokoll EU
-        </h1>
+        <div className="flex items-center justify-between mb-1">
+          <h1 className="text-xl font-semibold text-gray-800">Protokoll EU</h1>
+          <button
+            onClick={() => signOut({ callbackUrl: "/login" })}
+            className="text-xs text-gray-400 hover:text-gray-600"
+          >
+            Logga ut
+          </button>
+        </div>
         <p className="text-sm text-center text-gray-500 mb-6">Logen Derva</p>
 
         {/* === PROTOCOL PHASE === */}
