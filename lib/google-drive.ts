@@ -22,7 +22,8 @@ async function findFolderId(
   const res = await drive.files.list({
     q: query,
     fields: "files(id, name)",
-    spaces: "drive",
+    includeItemsFromAllDrives: true,
+    supportsAllDrives: true,
   });
 
   return res.data.files?.[0]?.id ?? null;
@@ -48,6 +49,7 @@ export async function uploadToGoogleDrive(
   const stream = Readable.from(buffer);
 
   const res = await drive.files.create({
+    supportsAllDrives: true,
     requestBody: {
       name: filename,
       parents: [protokollId],
