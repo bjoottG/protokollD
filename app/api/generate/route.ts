@@ -48,7 +48,9 @@ export async function POST(req: NextRequest) {
       analyzeNamelistPhotos(namelistBuffers),
     ]);
 
-    protocolData.absentGreetings = highlightedNames;
+    // Merge §6 from protocol with highlighted names from namelists (deduplicated)
+    const allGreetings = [...(protocolData.absentGreetings ?? []), ...highlightedNames];
+    protocolData.absentGreetings = [...new Set(allGreetings)];
 
     const docxBuffer = await generateProtocolDocx(protocolData);
     const filename = buildFilename(protocolData.meetingDate);

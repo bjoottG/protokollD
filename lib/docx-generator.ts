@@ -104,15 +104,42 @@ export async function generateProtocolDocx(data: ProtocolData): Promise<Buffer> 
   // --- § 2 ---
   paragraphs.push(sectionHeader(2));
   paragraphs.push(empty());
-  if (data.officersAllOrdinarie && data.officerSubstitutes.length === 0) {
-    paragraphs.push(p("Lästes förteckning över tjänstgörande ämbetsmän för dagen alla ordinarie"));
+
+  const nonVakant = data.officerSubstitutes.filter(
+    (s) => s.substitute.toLowerCase() !== "vakant"
+  );
+  const vakant = data.officerSubstitutes.filter(
+    (s) => s.substitute.toLowerCase() === "vakant"
+  );
+
+  if (nonVakant.length === 0) {
+    paragraphs.push(
+      p("Lästes förteckning över tjänstgörande ämbetsmän för dagen alla ordinarie")
+    );
+  } else if (nonVakant.length === 1) {
+    paragraphs.push(
+      p(
+        `Lästes förteckning över tjänstgörande ämbetsmän för dagen alla ordinarie med undantag för ${nonVakant[0].role} som ersattes av br ${nonVakant[0].substitute}`
+      )
+    );
   } else {
-    paragraphs.push(p("Lästes förteckning över tjänstgörande ämbetsmän för dagen alla ordinarie"));
-    paragraphs.push(p("Med undantag av:"));
-    for (const sub of data.officerSubstitutes) {
-      paragraphs.push(p(sub));
-    }
+    const joinSwedish = (arr: string[]) =>
+      arr.length === 2
+        ? arr.join(" och ")
+        : arr.slice(0, -1).join(", ") + " och " + arr[arr.length - 1];
+    const roles = joinSwedish(nonVakant.map((s) => s.role));
+    const names = joinSwedish(nonVakant.map((s) => `br ${s.substitute}`));
+    paragraphs.push(
+      p(
+        `Lästes förteckning över tjänstgörande ämbetsmän för dagen alla ordinarie med undantag för ${roles} som ersattes av ${names}`
+      )
+    );
   }
+
+  for (const v of vakant) {
+    paragraphs.push(p(`${v.role} lämnades vakant.`));
+  }
+
   // RSL/SL trustee always last in §2
   const rslName = data.tjOASubstitute ?? "Daniel Wikberg";
   paragraphs.push(p(`RSL:s och SL:s förtroendeman i logen är OÄ ${rslName}`));

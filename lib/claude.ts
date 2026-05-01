@@ -12,9 +12,14 @@ Formuläret innehåller följande paragrafer:
 - Sida 3: §7 (inkomna skrivelser), §8 (Ordet fritt), §9 (datum nästa möte), §10 (avslutning)
 
 Viktigt: Extrahera BARA vad som är handskrivet (inte den förtryckta texten i formuläret).
-För §2: titta på ERSÄTTARE-kolumnen – om ett namn är ifyllt där är personen ersatt.
-Specifikt viktigt: Kolla om "TjOÄ Daniel Wikberg" har en ersättare i ERSÄTTARE-kolumnen.
-Om ja, fyll i ersättarens namn i fältet "tjOASubstitute".
+
+För §2: titta på ERSÄTTARE-kolumnen för varje rad.
+- Om ett namn är ifyllt i ERSÄTTARE-kolumnen: lägg till {"role": "<ämbete>", "substitute": "<namn utan br-prefix>"}
+- Om "Vakant" är skrivet i ERSÄTTARE-kolumnen: lägg till {"role": "<ämbete>", "substitute": "Vakant"}
+- Specifikt: kolla om "TjOÄ Daniel Wikberg" har en ersättare — fyll i ersättarens namn i "tjOASubstitute".
+
+För §6: extrahera alla handskrivna namn och texter under §6 (hälsningar från frånvarande bröder).
+Returnera varje namn/rad som ett eget element i "absentGreetings".
 
 Returnera EXAKT följande JSON-format (ingen annan text):
 {
@@ -24,10 +29,11 @@ Returnera EXAKT följande JSON-format (ingen annan text):
   "openingTime": "HH:MM",
   "attendeeCount": "24",
   "officersAllOrdinarie": true|false,
-  "officerSubstitutes": ["Broder X var för dagen förhindrad fullgöra sitt ämbetsuppdrag och i hans ställe tjänstgjorde broder Y"],
+  "officerSubstitutes": [{"role": "SkattMästare", "substitute": "Erik Andersson"}, {"role": "Arkivarie", "substitute": "Vakant"}],
   "tjOASubstitute": null,
   "healthStatus": ["rad 1", "rad 2"],
   "forOrdersBest": ["rad 1", "rad 2"],
+  "absentGreetings": ["Namn1", "Namn2"],
   "incomingDocuments": ["rad 1"],
   "openDiscussion": ["Namn: text", "Namn2: text2"],
   "nextMeetingWeekday": "tisdagen|lördagen|etc",
@@ -38,7 +44,7 @@ Returnera EXAKT följande JSON-format (ingen annan text):
 
 Om något fält är tomt eller oläsbart, använd tom lista [] eller null.
 tjOASubstitute ska vara null om Daniel Wikberg inte har någon ersättare.
-§6 (hälsningar frånvarande brr) lämnas tom – den fylls i från namnlistfoton separat.`;
+officerSubstitutes ska vara [] om alla ämbetsmän är ordinarie.`;
 
 const NAMELIST_PROMPT = `Du ser ett eller flera foton på namnlistor.
 Vissa namn är markerade/gulmarkerade (highlighted i gult).
@@ -84,7 +90,8 @@ export async function analyzeProtocolPhotos(
   const parsed = JSON.parse(jsonMatch[0]);
   return {
     ...parsed,
-    absentGreetings: [],
+    absentGreetings: parsed.absentGreetings ?? [],
+    officerSubstitutes: parsed.officerSubstitutes ?? [],
   } as ProtocolData;
 }
 

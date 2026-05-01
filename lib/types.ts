@@ -1,3 +1,8 @@
+export interface OfficerSubstitute {
+  role: string;
+  substitute: string;
+}
+
 export interface ProtocolData {
   meetingDate: string;
   weekday: string;
@@ -5,7 +10,7 @@ export interface ProtocolData {
   openingTime: string;
   attendeeCount: string;
   officersAllOrdinarie: boolean;
-  officerSubstitutes: string[];
+  officerSubstitutes: OfficerSubstitute[];
   tjOASubstitute?: string;
   healthStatus: string[];
   forOrdersBest: string[];
