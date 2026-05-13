@@ -9,12 +9,13 @@ export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session?.accessToken) {
+  if (!session) {
     return NextResponse.json({ error: "Inte inloggad" }, { status: 401 });
   }
 
   try {
     const formData = await req.formData();
+    const skipDrive = formData.get("skipDrive") === "true";
 
     const protocolFiles: File[] = [];
     const namelistFiles: File[] = [];
@@ -54,6 +55,11 @@ export async function POST(req: NextRequest) {
 
     const docxBuffer = await generateProtocolDocx(protocolData);
     const filename = buildFilename(protocolData.meetingDate);
+    const docxBase64 = docxBuffer.toString("base64");
+
+    if (skipDrive || !session.accessToken) {
+      return NextResponse.json({ filename, docxBase64 });
+    }
 
     const [driveLink] = await Promise.all([
       uploadToGoogleDrive(docxBuffer, filename, session.accessToken),
@@ -65,7 +71,7 @@ export async function POST(req: NextRequest) {
       ).catch((err) => console.error("Foto-uppladdning misslyckades:", err)),
     ]);
 
-    return NextResponse.json({ filename, driveLink });
+    return NextResponse.json({ filename, driveLink, docxBase64 });
   } catch (err) {
     console.error(err);
     const message = err instanceof Error ? err.message : "Okänt fel";

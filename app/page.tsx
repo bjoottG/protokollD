@@ -28,11 +28,51 @@ async function compressImage(file: File): Promise<File> {
   });
 }
 
-type Phase = "protocol" | "namelist-prompt" | "namelist" | "processing" | "done" | "error";
+function downloadDocx(base64: string, filename: string) {
+  const bytes = atob(base64);
+  const arr = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+  const blob = new Blob([arr], {
+    type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function downloadPhoto(file: File, name: string) {
+  const url = URL.createObjectURL(file);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+type Phase =
+  | "drive-check"
+  | "protocol"
+  | "namelist-prompt"
+  | "namelist"
+  | "processing"
+  | "done"
+  | "error";
+
+type DriveMode = "drive" | "local";
+type CheckState = "idle" | "checking" | "fail";
 
 interface PhotoSet {
   protocolPhotos: File[];
   namelistPhotos: File[];
+}
+
+interface GenerateResult {
+  filename: string;
+  driveLink?: string;
+  docxBase64: string;
 }
 
 function PhotoThumb({ file, onRemove }: { file: File; onRemove: () => void }) {
@@ -65,14 +105,41 @@ function StepDots({ total, current }: { total: number; current: number }) {
 }
 
 export default function Home() {
-  const [phase, setPhase] = useState<Phase>("protocol");
+  const [phase, setPhase] = useState<Phase>("drive-check");
+  const [driveMode, setDriveMode] = useState<DriveMode>("drive");
+  const [checkState, setCheckState] = useState<CheckState>("idle");
+  const [checkError, setCheckError] = useState("");
   const [photos, setPhotos] = useState<PhotoSet>({ protocolPhotos: [], namelistPhotos: [] });
-  const [result, setResult] = useState<{ filename: string; driveLink: string } | null>(null);
+  const [result, setResult] = useState<GenerateResult | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const protocolCount = photos.protocolPhotos.length;
   const namelistCount = photos.namelistPhotos.length;
+
+  const handleDriveCheck = useCallback(async () => {
+    setCheckState("checking");
+    setCheckError("");
+    try {
+      const res = await fetch("/api/drive-check");
+      const data = await res.json();
+      if (data.ok) {
+        setDriveMode("drive");
+        setPhase("protocol");
+      } else {
+        setCheckError(data.error ?? "Kunde inte ansluta till Google Drive.");
+        setCheckState("fail");
+      }
+    } catch {
+      setCheckError("Nätverksfel – kunde inte kontrollera Google Drive.");
+      setCheckState("fail");
+    }
+  }, []);
+
+  const handleContinueLocal = useCallback(() => {
+    setDriveMode("local");
+    setPhase("protocol");
+  }, []);
 
   const handleFileChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -116,10 +183,11 @@ export default function Home() {
       const fd = new FormData();
       compressedProtocol.forEach((f, i) => fd.append(`protocol_${i + 1}`, f));
       compressedNamelist.forEach((f, i) => fd.append(`namelist_${i + 1}`, f));
+      if (driveMode === "local") fd.append("skipDrive", "true");
 
       const res = await fetch("/api/generate", { method: "POST", body: fd });
       const text = await res.text();
-      let data: { error?: string; filename?: string; driveLink?: string };
+      let data: { error?: string; filename?: string; driveLink?: string; docxBase64?: string };
       try {
         data = JSON.parse(text);
       } catch {
@@ -127,12 +195,21 @@ export default function Home() {
       }
 
       if (!res.ok) throw new Error(data.error ?? "Serverfel");
-      setResult(data as { filename: string; driveLink: string });
+      setResult(data as GenerateResult);
       setPhase("done");
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "Okänt fel");
       setPhase("error");
     }
+  }, [photos, driveMode]);
+
+  const handleDownloadPhotos = useCallback(() => {
+    photos.protocolPhotos.forEach((f, i) =>
+      downloadPhoto(f, `protokoll_sida${i + 1}.jpg`)
+    );
+    photos.namelistPhotos.forEach((f, i) =>
+      downloadPhoto(f, `namnlista${i + 1}.jpg`)
+    );
   }, [photos]);
 
   const reset = useCallback(() => {
@@ -141,6 +218,8 @@ export default function Home() {
     setErrorMsg("");
     setPhase("protocol");
   }, []);
+
+  const totalPhotos = protocolCount + namelistCount;
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-start px-4 py-8">
@@ -164,6 +243,63 @@ export default function Home() {
           </button>
         </div>
         <p className="text-sm text-center text-gray-500 mb-6">Logen Derva</p>
+
+        {/* === DRIVE CHECK PHASE === */}
+        {phase === "drive-check" && (
+          <div>
+            {checkState === "idle" && (
+              <div>
+                <p className="text-center text-gray-700 font-medium mb-2">
+                  Kontrollera Google Drive
+                </p>
+                <p className="text-sm text-center text-gray-500 mb-6">
+                  Kontrollera att appen har åtkomst till Google Drive innan du fotograferar.
+                </p>
+                <button
+                  onClick={handleDriveCheck}
+                  className="w-full py-4 bg-blue-600 text-white rounded-xl font-semibold text-lg active:bg-blue-700"
+                >
+                  Kontrollera koppling
+                </button>
+              </div>
+            )}
+
+            {checkState === "checking" && (
+              <div className="flex flex-col items-center py-8">
+                <div className="w-14 h-14 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-6" />
+                <p className="text-gray-700 font-medium">Kontrollerar Google Drive...</p>
+              </div>
+            )}
+
+            {checkState === "fail" && (
+              <div>
+                <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mb-4 mx-auto">
+                  <svg className="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <h2 className="text-lg font-semibold text-gray-800 mb-2 text-center">
+                  Google Drive ej tillgänglig
+                </h2>
+                <p className="text-sm text-red-600 mb-6 text-center bg-red-50 rounded-lg p-3">
+                  {checkError}
+                </p>
+                <button
+                  onClick={handleContinueLocal}
+                  className="w-full py-4 bg-blue-600 text-white rounded-xl font-semibold text-lg mb-3 active:bg-blue-700"
+                >
+                  Kör utan Google Drive
+                </button>
+                <button
+                  onClick={() => { setCheckState("idle"); setCheckError(""); }}
+                  className="w-full py-3 border-2 border-gray-200 text-gray-600 rounded-xl font-medium"
+                >
+                  Försök igen
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* === PROTOCOL PHASE === */}
         {phase === "protocol" && (
@@ -192,6 +328,12 @@ export default function Home() {
             >
               Ta foto
             </button>
+
+            {driveMode === "local" && (
+              <p className="text-xs text-center text-orange-600 mt-3">
+                Körs utan Google Drive – protokollet sparas lokalt
+              </p>
+            )}
           </div>
         )}
 
@@ -293,10 +435,18 @@ export default function Home() {
             <p className="text-sm text-gray-600 mb-1">
               <span className="font-medium">{result.filename}</span>
             </p>
-            <p className="text-sm text-gray-500 mb-6 text-center">
-              Sparad i Google Drive under D/protokoll
-            </p>
-            {result.driveLink && (
+
+            {driveMode === "drive" ? (
+              <p className="text-sm text-gray-500 mb-4 text-center">
+                Sparad i Google Drive under D/protokoll
+              </p>
+            ) : (
+              <p className="text-xs text-orange-600 mb-4 text-center bg-orange-50 rounded-lg p-2">
+                Kördes utan Google Drive – ladda ner protokollet och fotona nedan
+              </p>
+            )}
+
+            {driveMode === "drive" && result.driveLink && (
               <a
                 href={result.driveLink}
                 target="_blank"
@@ -306,6 +456,21 @@ export default function Home() {
                 Öppna i Google Drive
               </a>
             )}
+
+            <button
+              onClick={() => downloadDocx(result.docxBase64, result.filename)}
+              className="w-full py-3 bg-indigo-600 text-white rounded-xl font-semibold mb-3 active:bg-indigo-700"
+            >
+              Ladda ner protokoll (.docx)
+            </button>
+
+            <button
+              onClick={handleDownloadPhotos}
+              className="w-full py-3 border-2 border-indigo-300 text-indigo-600 rounded-xl font-medium mb-4 active:bg-indigo-50"
+            >
+              Ladda ner foton ({totalPhotos} st)
+            </button>
+
             <button
               onClick={reset}
               className="w-full py-3 border-2 border-gray-200 text-gray-600 rounded-xl font-medium"
